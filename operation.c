@@ -181,6 +181,7 @@ int splitSymbol(char ch) {
 
 Command parse(const char* argStr) {
     Command cmd;
+    printf("asdasd[%s][%s]\n", cmd.verb, cmd.arg);
     int i = 0;
     char state = 'V';
     char ch = '\0';

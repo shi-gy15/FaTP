@@ -8,7 +8,6 @@
 #define CHANNEL_PASV 4
 
 typedef struct {
-
     char verb[8];
     char arg[256];
 } Command;

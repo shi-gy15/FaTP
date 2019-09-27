@@ -122,40 +122,67 @@ int handlePassive(int connfd, Command* pcmd) {
     sp.connfd = createSock();
     sp.sock = buildSockAddr(NULL, sp.addr.port);
 
+    if (listenTo(&sp) != 0) {
+        return 1;
+    }
+
     sendRes(connfd, &res);
     return 0;
 }
 
 int handleList(int connfd, Command* pcmd) {
+
+    int trfd = 0;
     
-    if ()
-    if (connectTo(&sp) == 0) {
-        Response res;
-        res.status = 150;
-        res.hasMsg = 0;
-        sendRes(connfd, &res);
-    }
-    else {
-        return 1;
+    switch (channel) {
+        case CHANNEL_PORT:
+            if (connectTo(&sp) != 0) {
+                return 1;
+            }
+            trfd = sp.connfd;
+            break;
+        case CHANNEL_PASV:
+            
+            trfd = accept(sp.connfd, NULL, NULL);
+            // printf("asd?%d\n", trfd);
+            break;
+        default:
+            break;
     }
 
+    // send response for start
+    Response res;
+    res.status = 150;
+    res.hasMsg = 0;
+    sendRes(connfd, &res);
+
+    // tranfering list information
     DIR *dirp;
     struct dirent *dp;
     dirp = opendir(pwd); //打开目录指针
     char buf[256] = {0};
+    
     while ((dp = readdir(dirp)) != NULL) { //通过目录指针读目录
         sprintf(buf, ">-- %s\r\n", dp->d_name);
-        sendStr(sp.connfd, buf);
+        sendStr(trfd, buf);
+        printf("%s", buf);
     }      
     closedir(dirp); //关闭目录
 
+    // send resposne for finish
     Response resFinish;
     resFinish.status = 226;
     resFinish.hasMsg = 1;
     strcpy(resFinish.msg, "List finish, connection closed");
     sendRes(connfd, &resFinish);
 
-    close(sp.connfd);
+    if (channel == CHANNEL_PASV) {
+        close(trfd);
+        close(sp.connfd);
+    }
+    else {
+        close(sp.connfd);
+    }
 
     return 0;
 }
