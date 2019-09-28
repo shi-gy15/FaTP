@@ -19,12 +19,31 @@
 
 char username[32] = {0};
 char password[32] = {0};
-char pwd[258] = {0};
+// char pwd[258] = {0};
 
 int channel = CHANNEL_BLOCK;
 
 // Address* pPort = NULL;
 SockPort sp;
+WorkDir wd;
+
+int switchMode() {
+    switch (channel) {
+        case CHANNEL_PORT:
+            if (connectTo(&sp) != 0) {
+                return -1;
+            }
+            return sp.connfd;
+            break;
+        case CHANNEL_PASV:
+            return accept(sp.connfd, NULL, NULL);
+            // printf("asd?%d\n", trfd);
+            break;
+        default:
+            break;
+    }
+    return -1;
+}
 
 
 int handleUser(int connfd, Command* pcmd) {
@@ -84,11 +103,31 @@ int handleSystem(int connfd, Command* pcmd) {
     return 0;
 }
 
+int handleType(int connfd, Command* pcmd) {
+    Response res;
+    res.status = 200;
+    res.hasMsg = 1;
+    sprintf(res.msg, "Type set to %s", pcmd->arg);
+    sendRes(connfd, &res);
+    return 0;
+}
+
 int handlePwd(int connfd, Command* pcmd) {
     Response res;
     res.status = 257;
     res.hasMsg = 1;
-    strcpy(res.msg, pwd);
+    strcpy(res.msg, wd.wdname);
+    sendRes(connfd, &res);
+    return 0;
+}
+
+int handleCwd(int connfd, Command* pcmd) {
+    updateWd(&wd, pcmd->arg);
+    chdir(wd.wdname);
+    Response res;
+    res.status = 250;
+    res.hasMsg = 1;
+    strcpy(res.msg, wd.wdname);
     sendRes(connfd, &res);
     return 0;
 }
@@ -132,23 +171,7 @@ int handlePassive(int connfd, Command* pcmd) {
 
 int handleList(int connfd, Command* pcmd) {
 
-    int trfd = 0;
-    
-    switch (channel) {
-        case CHANNEL_PORT:
-            if (connectTo(&sp) != 0) {
-                return 1;
-            }
-            trfd = sp.connfd;
-            break;
-        case CHANNEL_PASV:
-            
-            trfd = accept(sp.connfd, NULL, NULL);
-            // printf("asd?%d\n", trfd);
-            break;
-        default:
-            break;
-    }
+    int trfd = switchMode();
 
     // send response for start
     Response res;
@@ -159,14 +182,14 @@ int handleList(int connfd, Command* pcmd) {
     // tranfering list information
     DIR *dirp;
     struct dirent *dp;
-    dirp = opendir(pwd); //打开目录指针
+    dirp = opendir(wd.wdname); //打开目录指针
     char buf[256] = {0};
     
     while ((dp = readdir(dirp)) != NULL) { //通过目录指针读目录
         sprintf(buf, ">-- %s\r\n", dp->d_name);
         sendStr(trfd, buf);
         printf("%s", buf);
-    }      
+    }
     closedir(dirp); //关闭目录
 
     // send resposne for finish
@@ -174,6 +197,113 @@ int handleList(int connfd, Command* pcmd) {
     resFinish.status = 226;
     resFinish.hasMsg = 1;
     strcpy(resFinish.msg, "List finish, connection closed");
+    sendRes(connfd, &resFinish);
+
+    if (channel == CHANNEL_PASV) {
+        close(trfd);
+        close(sp.connfd);
+    }
+    else {
+        close(sp.connfd);
+    }
+
+    return 0;
+}
+
+int handleRetrieve(int connfd, Command* pcmd) {
+    // TODO: support abs path
+    char filename[512] = {0};
+    sprintf(filename, "%s/%s", wd.wdname, pcmd->arg);
+
+    // switch transfer mode
+    int trfd = switchMode();
+
+    // send response for start
+    Response res;
+    res.status = 150;
+    res.hasMsg = 1;
+    strcpy(res.msg, "Start transfering file");
+    sendRes(connfd, &res);
+
+    // send file
+    FILE* f = fopen(filename, "rb");
+    if(!f) {
+        printf("Error fopen(), filename %s\n", filename);
+    }
+    char buf[BUF_LEN + 2];
+    int nbytes;
+
+    while (1) {
+        nbytes = fread(buf, 1, BUF_LEN, f);
+        // printf("[%d]", nbytes);
+        if (nbytes > 0)
+            send(trfd, buf, nbytes, 0);
+        else
+            break;
+    }
+    fclose(f);
+
+    // send resposne for finish
+    Response resFinish;
+    resFinish.status = 226;
+    resFinish.hasMsg = 1;
+    strcpy(resFinish.msg, "File retrieve finish, connection closed");
+    sendRes(connfd, &resFinish);
+
+    if (channel == CHANNEL_PASV) {
+        close(trfd);
+        close(sp.connfd);
+    }
+    else {
+        close(sp.connfd);
+    }
+
+    return 0;
+}
+
+int handleStore(int connfd, Command* pcmd) {
+    // TODO: support abs path
+    char filename[512] = {0};
+    sprintf(filename, "%s/%s", wd.wdname, pcmd->arg);
+
+    // switch transfer mode
+    int trfd = switchMode();
+
+    // send response for start
+    Response res;
+    res.status = 150;
+    res.hasMsg = 1;
+    strcpy(res.msg, "Start transfering file");
+    sendRes(connfd, &res);
+
+    FILE* f = fopen(filename, "wb");
+    if(!f) {
+        printf("Error fopen(), filename %s\n", filename);
+    }
+    char buf[BUF_LEN + 2];
+    int nbytes;
+
+    while (1) {
+        nbytes = recv(trfd, buf, BUF_LEN, 0);
+        // printf("[%d]", nbytes);
+        if (nbytes < 0) {
+            printf("Error in receiving file\n");
+            break;
+        }
+        else if (nbytes == 0) {
+            break;
+        }
+        else {
+            fwrite(buf, sizeof(char), nbytes, f);
+        }
+    }
+    fclose(f);
+
+    // send resposne for finish
+    Response resFinish;
+    resFinish.status = 226;
+    resFinish.hasMsg = 1;
+    strcpy(resFinish.msg, "File store finish, connection closed");
     sendRes(connfd, &resFinish);
 
     if (channel == CHANNEL_PASV) {
@@ -230,8 +360,14 @@ int dispatch(int connfd, char* argStr, int nbytes) {
     else if (eq(cmd.verb, "SYST") == 1) {
         handleSystem(connfd, &cmd);
     }
+    else if (eq(cmd.verb, "TYPE") == 1) {
+        handleType(connfd, &cmd);
+    }
     else if (eq(cmd.verb, "PWD") == 1) {
         handlePwd(connfd, &cmd);
+    }
+    else if (eq(cmd.verb, "CWD") == 1) {
+        handleCwd(connfd, &cmd);
     }
     else if (eq(cmd.verb, "PORT") == 1) {
         handlePort(connfd, &cmd);
@@ -248,6 +384,12 @@ int dispatch(int connfd, char* argStr, int nbytes) {
     else if (eq(cmd.verb, "PASV") == 1) {
         handlePassive(connfd, &cmd);
     }
+    else if (eq(cmd.verb, "RETR") == 1) {
+        handleRetrieve(connfd, &cmd);
+    }
+    else if (eq(cmd.verb, "STOR") == 1) {
+        handleStore(connfd, &cmd);
+    }
     else {
         printf("No match for [%d], [%s]\n", nbytes, argStr);
     }
@@ -259,7 +401,9 @@ int dispatch(int connfd, char* argStr, int nbytes) {
 int serve(int connfd) {
     sendStr(connfd, "220 Hello\r\n");
 
+    char pwd[258] = {0};
     getcwd(pwd, 256);
+    updateWd(&wd, pwd);
     // printf("%s, \n", p);
     // printf("%s, \n", pwd);
 

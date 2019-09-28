@@ -159,11 +159,79 @@ int sendRes(int sockfd, Response* pres) {
         sprintf(reply, "%d %s\r\n", pres->status, pres->msg);
     }
     else {
+        pres->msg[0] = '\0';
         // printf("asdsadasdasd%d, %s", pres->hasMsg, reply);
         sprintf(reply, "%d\r\n", pres->status);
     }
     printf("[DEBUG] Send response [%d: %s]\n", pres->status, pres->msg);
     sendStr(sockfd, reply);
+}
+
+
+int updateWd(WorkDir* ppwd, char* arg) {
+    int len = strlen(arg);
+    if (len == 0 || arg[0] == '/') {
+        for (int i = 0; i < ppwd->ndir; i++) {
+            strcpy(ppwd->dirs[i], "\0");
+        }
+        ppwd->ndir = 0;
+        // strcpy(ppwd->ppwdname, "/");
+        // return 0;
+    }
+
+    // if (len > 0 && arg[0] == '/') {
+    //     // clean existing dirs
+    //     for (int i = 0; i < ppwd->ndir; i++) {
+    //         strcpy(ppwd->dirs[i], "\0");
+    //     }
+    //     ppwd->ndir = 0;
+    // }
+    int last = 0;
+    int cur = 0;
+    while (1) {
+        if ((arg[cur] == '/' || arg[cur] == '\0')) {
+            if (last < cur) {
+                // if (strncmp(arg + last, "..", cur - last) == 0) {
+                if (arg[last] == '.' && arg[last + 1] == '.') {
+                    if (ppwd->ndir == 0)
+                        ;
+                    else {
+                        strcpy(ppwd->dirs[ppwd->ndir - 1], "\0");
+                        ppwd->ndir--;
+                    }
+                }
+                else if (strncmp(arg + last, ".", cur - last) == 0) {
+                    ;
+                }
+                else {
+                    strncpy(ppwd->dirs[ppwd->ndir], arg + last, cur - last);
+                    ppwd->dirs[ppwd->ndir][cur - last] = '\0';
+                    // printf("asc%s\n", ppwd->dirs[ppwd->ndir]);
+                    ppwd->ndir++;
+                }
+            }
+            
+            last = cur + 1;
+        }
+        if (arg[cur] == '\0')
+            break;
+        cur++;
+    }
+
+    if (ppwd->ndir == 0) {
+        strcpy(ppwd->wdname, "/");
+    }
+    else {
+        memset(ppwd->wdname, 0, sizeof(ppwd->wdname));
+        int offset = 0;
+        // printf("offset: %d\n", offset);
+        for (int i = 0; i < ppwd->ndir; i++) {
+            sprintf(ppwd->wdname + offset, "/%s", ppwd->dirs[i]);
+            offset += strlen(ppwd->dirs[i]) + 1;
+        }
+    }
+
+    return 0;
 }
 
 
@@ -181,7 +249,7 @@ int splitSymbol(char ch) {
 
 Command parse(const char* argStr) {
     Command cmd;
-    printf("asdasd[%s][%s]\n", cmd.verb, cmd.arg);
+    memset(&cmd, 0, sizeof(Command));
     int i = 0;
     char state = 'V';
     char ch = '\0';

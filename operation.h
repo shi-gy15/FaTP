@@ -8,6 +8,12 @@
 #define CHANNEL_PASV 4
 
 typedef struct {
+    char dirs[16][32];
+    char wdname[256];
+    int ndir;
+} WorkDir;
+
+typedef struct {
     char verb[8];
     char arg[256];
 } Command;
@@ -47,4 +53,5 @@ Address parseIPStr(const char* ips);
 int sendStr(int sockfd, const char* str);
 int sendRes(int sockfd, Response* pres);
 
+int updateWd(WorkDir* wd, char *arg);
 Command parse(const char* argStr);
